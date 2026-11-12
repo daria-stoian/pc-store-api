@@ -1,0 +1,14 @@
+# Opțional: PostgreSQL local fără instalare.  docker compose up -d
+services:
+  postgres:
+    image: postgres:16
+    container_name: pc-store-postgres
+    environment:
+      POSTGRES_PASSWORD: parola_ta
+      POSTGRES_DB: pc_store
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+volumes:
+  pg_data:

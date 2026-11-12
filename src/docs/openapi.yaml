@@ -1,0 +1,579 @@
+openapi: 3.0.3
+info:
+  title: PC Store API
+  version: 1.0.0
+  description: |
+    API REST pentru un magazin de componente PC (Raportarea I).
+    - **Autentificare:** `POST /auth/login` returnează un token JWT. Apasă **Authorize** și lipește tokenul (doar tokenul, fără `Bearer`).
+    - **Roluri:** `USER` (citire) și `ADMIN` (scriere pe produse, categorii, furnizori, metode de livrare).
+    - **Paginare:** `page` începe de la 0, `size` implicit 20 (max 100).
+    - **Erori:** format uniform `{ "error": { "status", "message", "details?" } }`.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Auth
+  - name: Products
+  - name: Categories
+  - name: Suppliers
+  - name: Delivery methods
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Înregistrare utilizator nou (rol USER)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Cont creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { description: Email deja înregistrat, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Autentificare (admin sau utilizator) — returnează JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: admin@pcstore.ro, password: 'Admin123!' }
+      responses:
+        '200':
+          description: Autentificare reușită
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { description: Email sau parolă greșită, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Utilizatorul autentificat
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /products:
+    get:
+      tags: [Products]
+      summary: Listă paginată de produse (public)
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/Order' }
+      responses:
+        '200':
+          description: Pagina de produse
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+    post:
+      tags: [Products]
+      summary: Adaugă produs (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '201':
+          description: Produs creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /products/search:
+    get:
+      tags: [Products]
+      summary: Căutare produse după nume și descriere (public)
+      description: Cuvintele din `q` (max 5) trebuie să apară fiecare în nume sau în descriere. Nu ține cont de majuscule.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 100 }, example: ryzen }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/Order' }
+      responses:
+        '200':
+          description: Rezultate
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /products/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Products]
+      summary: Detalii produs (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Products]
+      summary: Editează produs — înlocuire completă (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductInput' }
+      responses:
+        '200':
+          description: Produs actualizat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Products]
+      summary: Șterge produs (ADMIN)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Șters }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: Toate categoriile (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Category' } }
+    post:
+      tags: [Categories]
+      summary: Adaugă categorie (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '201':
+          description: Creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /categories/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Categories]
+      summary: Detalii categorie (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Categories]
+      summary: Editează categorie (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '200':
+          description: Actualizată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Category' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Categories]
+      summary: Șterge categorie (ADMIN) — 409 dacă are produse
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Ștearsă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /categories/{id}/products:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Categories]
+      summary: Produsele unei categorii (public, paginat)
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+        - { $ref: '#/components/parameters/Sort' }
+        - { $ref: '#/components/parameters/Order' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductPage' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /suppliers:
+    get:
+      tags: [Suppliers]
+      summary: Toți furnizorii (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+    post:
+      tags: [Suppliers]
+      summary: Adaugă furnizor (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupplierInput' }
+      responses:
+        '201':
+          description: Creat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /suppliers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Suppliers]
+      summary: Detalii furnizor (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Suppliers]
+      summary: Editează furnizor (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupplierInput' }
+      responses:
+        '200':
+          description: Actualizat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Suppliers]
+      summary: Șterge furnizor (ADMIN) — 409 dacă are produse
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Șters }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /delivery-methods:
+    get:
+      tags: [Delivery methods]
+      summary: Toate modalitățile de livrare (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/DeliveryMethod' } }
+    post:
+      tags: [Delivery methods]
+      summary: Adaugă modalitate de livrare (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryMethodInput' }
+      responses:
+        '201':
+          description: Creată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryMethod' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /delivery-methods/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Delivery methods]
+      summary: Detalii modalitate de livrare (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryMethod' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Delivery methods]
+      summary: Editează modalitate de livrare (ADMIN)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryMethodInput' }
+      responses:
+        '200':
+          description: Actualizată
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryMethod' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Delivery methods]
+      summary: Șterge modalitate de livrare (ADMIN) — 409 dacă e folosită
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Ștearsă }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, minimum: 1 }
+    Page:
+      name: page
+      in: query
+      description: Numărul paginii, începe de la 0
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      description: Elemente pe pagină
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Sort:
+      name: sort
+      in: query
+      schema: { type: string, enum: [id, name, price, stock], default: id }
+    Order:
+      name: order
+      in: query
+      schema: { type: string, enum: [asc, desc], default: asc }
+  responses:
+    ValidationError:
+      description: Date invalide
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              status: 400
+              message: Validation failed
+              details: [{ field: price, message: "'price' must be greater than or equal to 0" }]
+    Unauthorized:
+      description: Token lipsă, invalid sau expirat
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Utilizatorul nu are rolul ADMIN
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resursa nu există
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Valoare duplicată sau resursa este încă referită de alte înregistrări
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            status: { type: integer }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email: { type: string, format: email, example: student@example.com }
+        password: { type: string, minLength: 8, maxLength: 72, example: Parola123! }
+        name: { type: string, minLength: 2, maxLength: 100, example: Ion Popescu }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [USER, ADMIN] }
+    LoginResponse:
+      type: object
+      properties:
+        token: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: string, example: 1h }
+        user: { $ref: '#/components/schemas/User' }
+    Category:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100, example: Plăci de sunet }
+        description: { type: string, maxLength: 500, nullable: true }
+    Supplier:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        contact: { type: string, nullable: true }
+    SupplierInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 150, example: Furnizor Nou SRL }
+        contact: { type: string, maxLength: 255, nullable: true }
+    DeliveryMethod:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        cost: { type: number, format: double }
+    DeliveryMethodInput:
+      type: object
+      required: [name, cost]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100, example: Livrare în aceeași zi }
+        cost: { type: number, minimum: 0, example: 49.99 }
+    ProductInput:
+      type: object
+      required: [name, price, stock, categoryId, supplierId, deliveryMethodId]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200, example: Procesor AMD Ryzen 5 5600 }
+        description: { type: string, maxLength: 5000, nullable: true, example: Procesor 6 nuclee pentru platforma AM4. }
+        specifications:
+          type: object
+          additionalProperties: true
+          description: Perechi cheie-valoare, diferite pe categorie
+          example: { socket: AM4, nuclee: 6, threads: 12, tdp: 65W }
+        price: { type: number, minimum: 0, example: 649.99 }
+        stock: { type: integer, minimum: 0, example: 15 }
+        categoryId: { type: integer, example: 1 }
+        supplierId: { type: integer, example: 1 }
+        deliveryMethodId: { type: integer, example: 1 }
+    Product:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        specifications: { type: object, additionalProperties: true }
+        price: { type: number }
+        stock: { type: integer }
+        category: { type: object, properties: { id: { type: integer }, name: { type: string } } }
+        supplier: { type: object, properties: { id: { type: integer }, name: { type: string } } }
+        deliveryMethod:
+          type: object
+          properties: { id: { type: integer }, name: { type: string }, cost: { type: number } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProductPage:
+      type: object
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/Product' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
